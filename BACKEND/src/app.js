@@ -30,6 +30,7 @@ app.disable("x-powered-by");
 // Encabezados de seguridad
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
 
   res.setHeader("X-Frame-Options", "DENY");
 
