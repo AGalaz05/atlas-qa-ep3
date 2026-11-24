@@ -1,23 +1,32 @@
-name: CI Atlas - Seguridad y Pruebas Automatizadas
+
+name: CI Atlas - Seguridad y Pruebas Automatizadas EP5
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: ["main", "develop"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   qa-pipeline:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - name: Descargar codigo fuente
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Configurar Node.js 18
-        uses: actions/setup-node@v4
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v5
         with:
-          node-version: "18"
+          node-version: "22"
+
+      - name: Preparar carpeta de evidencias
+        run: mkdir -p evidencias
 
       - name: Verificar sintaxis del Backend
         run: |
@@ -25,15 +34,79 @@ jobs:
           node --check BACKEND/src/routes/auth.js
           node --check BACKEND/src/routes/clients.js
           node --check BACKEND/src/routes/contracts.js
+          node --check BACKEND/src/test_ep3.js
+
+      - name: SAST - Analisis estatico con Semgrep
+        if: ${{ !cancelled() }}
+        run: |
+          docker run --rm \
+            -v "$PWD:/src" \
+            -w /src \
+            semgrep/semgrep \
+            semgrep scan \
+            --config p/security-audit \
+            --config p/javascript \
+            --json \
+            --output /src/evidencias/semgrep.json \
+            --error BACKEND/src
+
+      - name: SCA - Analisis de dependencias npm audit
+        if: ${{ !cancelled() }}
+        run: |
+          cd BACKEND
+          if [ ! -f package-lock.json ]; then
+            npm install --package-lock-only --ignore-scripts
+          fi
+          npm audit --json --audit-level=high \
+            > ../evidencias/npm-audit.json
 
       - name: Levantar entorno con Docker Compose
+        if: ${{ !cancelled() }}
+        id: docker
         run: docker compose up -d --build
 
       - name: Esperar disponibilidad del Backend
-        run: sleep 15
+        if: ${{ !cancelled() && steps.docker.outcome == 'success' }}
+        id: backend
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec atlas-backend node -e "require('http').get('http://127.0.0.1:4000/', r => process.exit(0)).on('error', () => process.exit(1))"; then
+              echo "Backend disponible"
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
 
       - name: Ejecutar Suite Automatizada EP3
-        run: docker exec atlas-backend node src/test_ep3.js
+        if: ${{ !cancelled() && steps.backend.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          docker exec atlas-backend node src/test_ep3.js \
+            2>&1 | tee evidencias/pruebas-automatizadas.txt
+
+      - name: DAST - Analisis pasivo con OWASP ZAP
+        if: ${{ !cancelled() && steps.backend.outcome == 'success' }}
+        run: |
+          chmod 777 evidencias
+          docker run --rm \
+            --network container:atlas-backend \
+            -v "$PWD/evidencias:/zap/wrk/:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t http://127.0.0.1:4000 \
+            -m 1 \
+            -r zap-report.html \
+            -J zap-report.json \
+            -I
+
+      - name: Guardar evidencias EP5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidencias-seguridad-EP5
+          path: evidencias/
+          retention-days: 30
 
       - name: Detener contenedores
         if: always()
