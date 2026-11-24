@@ -3,10 +3,10 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../lib/api";
 import { Button, Card, CardContent, Stack, Typography } from "@mui/material";
 import { useAuth } from "../../hooks/useAuth";
+import { abrirContrato } from "../../lib/abrirContrato";
 import { toast } from "sonner";
 
 export default function ContratoDetalle() {
-  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:4450";
 
   const { id } = useParams();
   const [item, setItem] = useState(null);
@@ -40,13 +40,12 @@ export default function ContratoDetalle() {
           {item.descripcion && (
             <Typography>Descripción: {item.descripcion}</Typography>
           )}
-          <a
-            href={`${apiUrl}/contratos/${id}/file`}
-            target="_blank"
-            rel="noreferrer"
+          <Button
+            variant="text"
+            onClick={() => abrirContrato(id)}
           >
             Ver archivo
-          </a>
+          </Button>
           {role === "administrador" && (
             <Button color="error" variant="contained" onClick={onDelete}>
               Eliminar
