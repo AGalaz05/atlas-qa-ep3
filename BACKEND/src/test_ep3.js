@@ -21,7 +21,11 @@ function request(method, path, body = null, token = null) {
         resolve({ status: res.statusCode, body: json, ms: parseFloat(ms) });
       });
     });
-    req.on("error", reject);
+    req.setTimeout(10000, () => {
+  req.destroy(new Error("Tiempo de espera agotado"));
+});
+
+req.on("error", reject);
     if (data) req.write(data);
     req.end();
   });
@@ -52,6 +56,12 @@ async function ejecutarPruebas() {
   verificar("CP-11.1", "Sin retardo artificial 4s en Login", r2.ms < 500, `${r2.ms} ms (Antes: > 4000 ms)`);
   const r3 = await request("POST", "/autenticacion/login", { nombre_usuario: "editor", password: "editor" });
   const tokenEditor = r3.body?.token;
+  verificar(
+  "CP-20.3",
+  "Login valido Editor",
+  r3.status === 200 && Boolean(tokenEditor),
+  `HTTP ${r3.status}`
+);
 
   const r4 = await request("POST", "/clientes", { nombre: "Cliente Test RBAC", correo: "test@atlas.cl" }, tokenEditor);
   verificar("CP-27", "Bloqueo escritura Rol Editor (INC-01)", r4.status === 403, `HTTP ${r4.status} Forbidden`);
@@ -67,11 +77,27 @@ async function ejecutarPruebas() {
   const lote = Array.from({ length: 50 }, () => request("GET", "/clientes", null, tokenAdmin));
   const resultadosCarga = await Promise.all(lote);
   const totalMs = (performance.now() - inicioCarga).toFixed(2);
-  const promedioMs = (totalMs / 50).toFixed(2);
-  const todos200 = resultadosCarga.every((r) => r.status === 200);
-  verificar("CP-22", "Carga 50 peticiones concurrentes GET /clientes", todos200 && promedioMs < 300, `50/50 HTTP 200 | Promedio: ${promedioMs} ms`);
+const promedioMs = (
+  resultadosCarga.reduce((suma, r) => suma + r.ms, 0)
+  / resultadosCarga.length
+).toFixed(2);  const todos200 = resultadosCarga.every((r) => r.status === 200);
+const exitosas = resultadosCarga.filter(
+  (r) => r.status === 200
+).length;
 
+verificar(
+  "CP-22",
+  "Carga 50 peticiones concurrentes GET /clientes",
+  todos200 && Number(promedioMs) < 300,
+  `${exitosas}/50 HTTP 200 | Promedio: ${promedioMs} ms | Total: ${totalMs} ms`
+);
   console.log(`\nRESUMEN FINAL: ${aprobados} APROBADOS | ${fallidos} FALLIDOS`);
 }
 
-ejecutarPruebas().catch(console.error);
+  process.exitCode = fallidos > 0 ? 1 : 0;
+
+
+ejecutarPruebas().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
