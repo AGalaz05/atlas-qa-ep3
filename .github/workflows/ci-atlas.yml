@@ -21,16 +21,16 @@ jobs:
 
       - name: Verificar sintaxis del Backend
         run: |
-          node --check backend/src/middlewares/authMiddleware.js
-          node --check backend/src/routes/auth.js
-          node --check backend/src/routes/clients.js
-          node --check backend/src/routes/contracts.js
+          node --check BACKEND/src/middlewares/authMiddleware.js
+          node --check BACKEND/src/routes/auth.js
+          node --check BACKEND/src/routes/clients.js
+          node --check BACKEND/src/routes/contracts.js
 
       - name: Levantar entorno con Docker Compose
         run: docker compose up -d --build
 
       - name: Esperar disponibilidad del Backend
-        run: sleep 10
+        run: sleep 15
 
       - name: Ejecutar Suite Automatizada EP3
         run: docker exec atlas-backend node src/test_ep3.js
