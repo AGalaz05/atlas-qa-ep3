@@ -1,0 +1,40 @@
+name: CI Atlas - Seguridad y Pruebas Automatizadas
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  qa-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar codigo fuente
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Verificar sintaxis del Backend
+        run: |
+          node --check backend/src/middlewares/authMiddleware.js
+          node --check backend/src/routes/auth.js
+          node --check backend/src/routes/clients.js
+          node --check backend/src/routes/contracts.js
+
+      - name: Levantar entorno con Docker Compose
+        run: docker compose up -d --build
+
+      - name: Esperar disponibilidad del Backend
+        run: sleep 10
+
+      - name: Ejecutar Suite Automatizada EP3
+        run: docker exec atlas-backend node src/test_ep3.js
+
+      - name: Detener contenedores
+        if: always()
+        run: docker compose down
